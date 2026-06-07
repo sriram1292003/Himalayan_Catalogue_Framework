@@ -30,8 +30,12 @@ const getInitialMatrix = () => {
     for (let i = 4; i < matrixRaw.length; i++) {
       const row = matrixRaw[i];
       if (!row[0] || row[0].trim() === "") continue;
+      const attr = row[0].trim();
+      if (attr === "Legend" || attr === "P0" || attr === "P1" || attr === "P2" || attr === "NA") {
+        break;
+      }
       rows.push({
-        attribute: row[0].trim(),
+        attribute: attr,
         Amazon: row[1] || "",
         Flipkart: row[2] || "",
         Meesho: row[3] || "",
@@ -187,8 +191,8 @@ export default function MatrixView({ onRedirect }) {
     if (top + tipH + MARGIN > vh) top = vh - tipH - MARGIN;
     if (top < MARGIN) top = MARGIN;
 
-    // Convert to page coordinates (add scroll)
-    setTooltipPos({ x: left + window.scrollX, y: top + window.scrollY });
+    // Convert to page coordinates (position: fixed uses viewport coords)
+    setTooltipPos({ x: left, y: top });
     setTooltipReady(true);
   }, [tooltipRow]);
 
@@ -214,7 +218,8 @@ export default function MatrixView({ onRedirect }) {
     if (left < MARGIN) left = MARGIN;
     // Clamp top
     if (top < MARGIN) top = MARGIN;
-    setPriorityTipPos({ x: left + window.scrollX, y: top + window.scrollY });
+    // Convert to page coordinates (position: fixed uses viewport coords)
+    setPriorityTipPos({ x: left, y: top });
     setPriorityTipReady(true);
   }, [priorityTip]);
 
@@ -262,7 +267,7 @@ export default function MatrixView({ onRedirect }) {
     };
     if (pVal === 'P1') return {
       bg: '#ffeb9c', color: '#9c6500', label: 'P1',
-      desc: 'Either ranking-relevant OR user-visible / conversion-driving. Optimise after P0 is solid.'
+      desc: 'One of the two: either ranking-relevant OR user-visible / conversion-driving. Optimise after P0 is solid.'
     };
     if (pVal === 'P2') return {
       bg: '#ffc7ce', color: '#9c0006', label: 'P2',
@@ -462,15 +467,17 @@ export default function MatrixView({ onRedirect }) {
             <span className="plegend-label">PRIORITY SCALE</span>
             <div className="plegend-pills">
               {[
-                { label: 'P0', bg: '#c6efce', color: '#276221' },
-                { label: 'P1', bg: '#ffeb9c', color: '#9c6500' },
-                { label: 'P2', bg: '#ffc7ce', color: '#9c0006' },
-                { label: 'NA', bg: '#f2f2f2', color: '#999'    },
+                { label: 'P0', bg: '#c6efce', color: '#276221', desc: 'Ranking-critical AND user-visible. Always optimised first.' },
+                { label: 'P1', bg: '#ffeb9c', color: '#9c6500', desc: 'One of the two: either ranking-relevant OR user-visible / conversion-driving. Optimise after P0 is solid.' },
+                { label: 'P2', bg: '#ffc7ce', color: '#9c0006', desc: 'Neither ranking-relevant nor pre-click visible, but supports on-page conversion. Optimise once P0 and P1 are clean.' },
+                { label: 'NA', bg: '#f2f2f2', color: '#888',    desc: 'Field not available, or not brand-controlled, on this platform.' },
               ].map(p => (
                 <span
                   key={p.label}
                   className="plegend-pill-badge"
-                  style={{ background: p.bg, color: p.color }}
+                  style={{ background: p.bg, color: p.color, cursor: 'pointer' }}
+                  onMouseEnter={(e) => handleChipHover(p, e)}
+                  onMouseLeave={handleChipLeave}
                 >
                   {p.label}
                 </span>

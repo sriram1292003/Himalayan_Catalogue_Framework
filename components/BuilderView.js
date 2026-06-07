@@ -1,297 +1,279 @@
-import { useState, useEffect } from 'react';
+'use client';
+import { useState, useEffect, useRef } from 'react';
 import { CATALOG_DATA } from '@/lib/data';
-import { 
-  Sparkles, 
-  Smartphone, 
-  Monitor, 
-  Sliders, 
-  Heading, 
-  AlignLeft, 
-  Copy, 
+import {
+  Sparkles,
+  Smartphone,
+  Monitor,
+  Sliders,
+  Heading,
+  AlignLeft,
+  Copy,
   CheckCircle,
-  HelpCircle,
-  FolderOpen
+  FolderOpen,
+  Zap,
+  Star,
+  BarChart2,
+  Info,
+  ChevronRight,
+  Search,
+  ShoppingCart,
+  Package,
+  Lightbulb,
+  Target,
+  Award,
+  Beaker,
+  Flame,
+  Tag
 } from 'lucide-react';
 
+// ─── helpers ───────────────────────────────────────────────
+const detectSize = (skuName) => {
+  const regex = /\b\d+\s*(?:ml|g|ML|G|oz|wipes|s|S|N|kg|KG)\b|\b\d+'s\b/i;
+  const m = skuName ? skuName.match(regex) : null;
+  return m ? m[0] : '';
+};
+
+const cleanQuotes = (str) => {
+  if (!str) return '';
+  return str.replace(/^["']|["']$/g, '').replace(/\\n/g, '\n');
+};
+
+const parseHardLimit = (s) => {
+  if (!s) return null;
+  const n = s.replace(/,/g, '').match(/\d+/);
+  return n ? parseInt(n[0], 10) : null;
+};
+
+const parseTargetRange = (s) => {
+  if (!s || s.toLowerCase() === 'none') return null;
+  const mm = s.replace(/,/g, '').match(/(\d+)\s*[-–]\s*(\d+)/);
+  if (mm) return { min: parseInt(mm[1]), max: parseInt(mm[2]) };
+  const pm = s.replace(/,/g, '').match(/(\d+)\s*\+/);
+  if (pm) return { min: parseInt(pm[1]), max: 9999 };
+  return null;
+};
+
+const counterClass = (len, limitStr, rangeStr) => {
+  const hard = parseHardLimit(limitStr);
+  const range = parseTargetRange(rangeStr);
+  if (hard && len > hard) return 'bld-counter exceeded';
+  if (range && (len < range.min || len > range.max)) return 'bld-counter warning';
+  if (len > 0) return 'bld-counter good';
+  return 'bld-counter empty';
+};
+
+const getPlaybookData = (sheetName) => {
+  const rawRows = CATALOG_DATA[sheetName] || [];
+  let headerIdx = -1;
+  for (let i = 0; i < rawRows.length; i++) {
+    if (rawRows[i].includes('Field') || rawRows[i].includes('Attribute')) { headerIdx = i; break; }
+  }
+  if (headerIdx === -1) return { rows: [] };
+  const rawHeaders = rawRows[headerIdx];
+  const dataRows = [];
+  for (let i = headerIdx + 1; i < rawRows.length; i++) {
+    const row = rawRows[i];
+    const nonEmpty = row.filter(c => c && c.trim() !== '');
+    if (nonEmpty.length === 0) continue;
+    if (nonEmpty.length === 1 && nonEmpty[0].trim() === nonEmpty[0].trim().toUpperCase()) {
+      dataRows.push({ isSection: true, title: nonEmpty[0].trim() }); continue;
+    }
+    const obj = { isSection: false };
+    for (let j = 0; j < rawHeaders.length; j++) {
+      const h = rawHeaders[j];
+      if (h && h.trim()) obj[h.trim()] = row[j] != null ? String(row[j]).trim() : '';
+    }
+    dataRows.push(obj);
+  }
+  return { rows: dataRows };
+};
+
+// Quality score calculator
+const calcQualityScore = (title, description, bullets) => {
+  let score = 0;
+  const t = title.trim();
+  const d = description.trim();
+  const b = bullets.trim();
+
+  // Title scoring (50 pts)
+  if (t.length >= 60) score += 15;
+  else if (t.length >= 30) score += 8;
+  if (t.length >= 80 && t.length <= 200) score += 20;
+  else if (t.length > 0 && t.length < 200) score += 10;
+  if (/\d+(ml|g|oz|kg)/i.test(t)) score += 8;  // has size
+  if (t.split(' ').length >= 6) score += 7;
+
+  // Description scoring (25 pts)
+  if (d.length >= 100) score += 10;
+  if (d.length >= 200) score += 10;
+  if (d.length >= 400) score += 5;
+
+  // Bullets scoring (25 pts)
+  const bulletLines = b.split('\n').filter(l => l.trim() !== '');
+  if (bulletLines.length >= 3) score += 10;
+  if (bulletLines.length >= 5) score += 10;
+  if (b.length >= 100) score += 5;
+
+  return Math.min(score, 100);
+};
+
+const getScoreLabel = (score) => {
+  if (score >= 85) return { label: 'Excellent', color: '#16a34a', bg: '#dcfce7' };
+  if (score >= 65) return { label: 'Good', color: '#ca8a04', bg: '#fef9c3' };
+  if (score >= 40) return { label: 'Fair', color: '#ea580c', bg: '#ffedd5' };
+  return { label: 'Needs Work', color: '#dc2626', bg: '#fee2e2' };
+};
+
+// ─── Component ─────────────────────────────────────────────
 export default function BuilderView({ presetPlatform, presetSkuId, clearPresetSku }) {
   const [platform, setPlatform] = useState(presetPlatform || 'Amazon');
   const [skuId, setSkuId] = useState(presetSkuId || '');
   const [skus, setSkus] = useState([]);
-  const [definitions, setDefinitions] = useState([]);
-  
-  // Form Inputs
-  const [placeholders, setPlaceholders] = useState({});
+  const [categoryFilter, setCategoryFilter] = useState('Beauty');
+
+  // Title builder — free text + ingredient inputs
+  const [titleText, setTitleText] = useState('');
+  const [ingredients, setIngredients] = useState({
+    brand: 'Himalaya',
+    heroPromise: '',
+    productType: '',
+    heroIngredient: '',
+    skinConcern: '',
+    size: '',
+    qualifier: '',
+    claim: '',
+  });
+
+  // Other content fields
   const [description, setDescription] = useState('');
-  const [bullets, setBullets] = useState('');
-  const [ingredients, setIngredients] = useState('');
-  
-  // UI Display state
-  const [titleFormula, setTitleFormula] = useState('');
-  const [titleSpecs, setTitleSpecs] = useState({ limit: '', target: '', notes: '' });
+  const [bulletText, setBulletText] = useState('');
+  const [ingredientList, setIngredientList] = useState('');
+
+  // Specs from playbook
+  const [titleSpecs, setTitleSpecs] = useState({ limit: '200 chars max', target: '80–120 chars', notes: '' });
   const [otherSpecs, setOtherSpecs] = useState([]);
-  const [previewTab, setPreviewTab] = useState('mobile'); // 'mobile' | 'pdp'
-  
-  // Copy feedback toast
+
+  // UI state
+  const [previewTab, setPreviewTab] = useState('mobile');
   const [toast, setToast] = useState({ show: false, message: '' });
+  const [copiedKey, setCopiedKey] = useState(null);
 
-  // Init list of SKUs and Definitions
+  const platforms = Object.keys(CATALOG_DATA).filter(k =>
+    k !== 'SKU' && k !== 'Index' && k !== 'L1 Priority Matrix'
+  );
+
+  // Load SKUs once
   useEffect(() => {
-    // Definitions
-    const indexRaw = CATALOG_DATA["Index"] || [];
-    const parsedDefs = [];
-    let startDef = false;
-    for (let i = 0; i < indexRaw.length; i++) {
-      const row = indexRaw[i];
-      if (row[0] && row[0].includes("TITLE FORMULA - WHAT EACH PLACEHOLDER MEANS")) {
-        startDef = true;
-        continue;
-      }
-      if (startDef && row[0] && row[0].trim() !== "" && row[0] !== "Placeholder") {
-        parsedDefs.push({
-          placeholder: row[0].trim(),
-          definition: row[1] ? row[1].trim() : "",
-          beautyEx: row[2] ? row[2].trim() : "",
-          babyEx: row[3] ? row[3].trim() : ""
-        });
-      }
-    }
-    setDefinitions(parsedDefs);
-
-    // SKUs
-    const skuRaw = CATALOG_DATA["SKU"] || [];
-    const parsedSkus = [];
+    const skuRaw = CATALOG_DATA['SKU'] || [];
+    const parsed = [];
     if (skuRaw.length > 2) {
       for (let i = 2; i < skuRaw.length; i++) {
         const row = skuRaw[i];
-        if (row[0] && row[0].trim() !== "" && row[0] !== "SKU Name") {
-          parsedSkus.push({
-            id: `beauty-${i}`,
-            portfolio: "Beauty",
-            name: row[0].trim(),
-            category: row[1] ? row[1].trim() : "",
-            owner: row[2] ? row[2].trim() : ""
-          });
+        if (row[0] && row[0].trim() && row[0] !== 'SKU Name') {
+          parsed.push({ id: `beauty-${i}`, portfolio: 'Beauty', name: row[0].trim(), category: row[1]?.trim() || '', owner: row[2]?.trim() || '' });
         }
-        if (row[7] && row[7].trim() !== "" && row[7] !== "SKU Name") {
-          parsedSkus.push({
-            id: `baby-${i}`,
-            portfolio: "Baby",
-            name: row[7].trim(),
-            category: row[8] ? row[8].trim() : "",
-            owner: row[9] ? row[9].trim() : "Ponnappa"
-          });
+        if (row[7] && row[7].trim() && row[7] !== 'SKU Name') {
+          parsed.push({ id: `baby-${i}`, portfolio: 'Baby', name: row[7].trim(), category: row[8]?.trim() || '', owner: row[9]?.trim() || 'Ponnappa' });
         }
       }
     }
-    setSkus(parsedSkus);
-
-    // Initial SKU load
-    if (parsedSkus.length > 0 && !skuId) {
-      setSkuId(parsedSkus[0].id);
+    setSkus(parsed);
+    
+    if (parsed.length > 0) {
+      let initialSku = parsed[0];
+      if (presetSkuId) {
+        const found = parsed.find(s => s.id === presetSkuId);
+        if (found) initialSku = found;
+      }
+      setSkuId(initialSku.id);
+      setCategoryFilter(initialSku.portfolio);
     }
   }, []);
 
-  // Update builder presets if changed externally
+  // Sync external presets
   useEffect(() => {
     if (presetPlatform) setPlatform(presetPlatform);
-    if (presetSkuId) setSkuId(presetSkuId);
-  }, [presetPlatform, presetSkuId]);
-
-  // Main Builder update logic
-  useEffect(() => {
-    if (skus.length === 0 || !skuId) return;
-
-    const skuObj = skus.find(s => s.id === skuId);
-    if (!skuObj) return;
-
-    const playbook = CATALOG_DATA[platform];
-    if (!playbook) return;
-
-    // Load playbook data specifically
-    const playbookData = getPlaybookData(platform);
-    
-    // Title rule
-    const titleRule = playbookData.rows.find(r => 
-      !r.isSection && (r['Field'] === 'Product Name' || r['Field'] === 'Product Title' || r['Attribute'] === 'Title')
-    );
-
-    let formula = "Brand · Product Type · Primary Promise · Hero Ingredient · Size";
-    let specLimit = "200 characters";
-    let specTarget = "80-120 characters";
-    let specNotes = "";
-
-    if (titleRule) {
-      formula = titleRule['Best-Practice Formula'] || formula;
-      specLimit = titleRule['Hard Limit'] || specLimit;
-      specTarget = titleRule['Target Range'] || specTarget;
-      specNotes = titleRule['Notes'] || specNotes;
+    if (presetSkuId && skus.length > 0) {
+      const found = skus.find(s => s.id === presetSkuId);
+      if (found) {
+        setSkuId(presetSkuId);
+        setCategoryFilter(found.portfolio);
+      }
     }
+  }, [presetPlatform, presetSkuId, skus]);
 
-    setTitleFormula(formula);
-    setTitleSpecs({ limit: specLimit, target: specTarget, notes: specNotes });
+  const handleCategoryFilterChange = (cat) => {
+    setCategoryFilter(cat);
+    const filtered = skus.filter(s => s.portfolio === cat);
+    if (filtered.length > 0) {
+      setSkuId(filtered[0].id);
+    }
+  };
 
-    // Other Content fields specs (Description, Bullets, Ingredients)
-    const otherContent = playbookData.rows.filter(r => 
+  // When SKU changes → update ingredients defaults
+  useEffect(() => {
+    if (!skuId || skus.length === 0) return;
+    const sku = skus.find(s => s.id === skuId);
+    if (!sku) return;
+    setIngredients(prev => ({
+      ...prev,
+      brand: 'Himalaya',
+      productType: sku.category || '',
+      size: detectSize(sku.name),
+    }));
+  }, [skuId, skus]);
+
+  // When platform changes → load specs
+  useEffect(() => {
+    const pb = getPlaybookData(platform);
+    const titleRule = pb.rows.find(r =>
       !r.isSection && (
-        r['Field'] === 'Description' || 
-        r['Field'] === 'Key Features' || 
-        r['Field'] === 'Bullet Points' || 
-        r['Field'] === 'Ingredient' || 
-        r['Field'] === 'Ingredients' || 
-        r['Attribute'] === 'Description' ||
-        r['Attribute'] === 'Bullet Points'
+        r['Field'] === 'Product Name' || r['Field'] === 'Product Title' ||
+        r['Field'] === 'Title' || r['Attribute'] === 'Title' ||
+        r['Field']?.toLowerCase().includes('title') || r['Field']?.toLowerCase().includes('name')
       )
     );
-    setOtherSpecs(otherContent);
+    if (titleRule) {
+      setTitleSpecs({
+        limit: titleRule['Hard Limit'] || '200 chars max',
+        target: titleRule['Target Range'] || '80–120 chars',
+        notes: titleRule['Notes'] || '',
+      });
+    }
 
-    // Setup Placeholders state dynamically
-    const formulaParts = formula.split(/[·•\-\+]/).map(p => p.trim()).filter(p => p !== '');
-    const detectedSize = detectSize(skuObj.name);
-    const productType = skuObj.category;
-    
-    const newPlaceholders = {};
-    formulaParts.forEach(p => {
-      let defaultVal = '';
-      if (p.toLowerCase() === 'brand') defaultVal = 'Himalaya';
-      else if (p.toLowerCase() === 'size') defaultVal = detectedSize;
-      else if (p.toLowerCase() === 'product type') defaultVal = productType;
-      
-      // Preserve user typed fields if valid
-      if (placeholders[p] !== undefined) {
-        newPlaceholders[p] = placeholders[p];
-      } else {
-        newPlaceholders[p] = defaultVal;
-      }
+    const other = pb.rows.filter(r =>
+      !r.isSection && (
+        r['Field'] === 'Description' || r['Field'] === 'Key Features' ||
+        r['Field'] === 'Bullet Points' || r['Field'] === 'Highlights' ||
+        r['Field'] === 'Ingredient' || r['Field'] === 'Ingredients' ||
+        r['Attribute'] === 'Description' || r['Attribute'] === 'Bullet Points'
+      )
+    );
+    setOtherSpecs(other);
+
+    // Pre-populate examples when switching platform
+    other.forEach(field => {
+      const fn = (field['Field'] || field['Attribute'] || '').toLowerCase();
+      const ex = field['Example 1'] || '';
+      if (fn.includes('desc') && !description) setDescription(cleanQuotes(ex));
+      if ((fn.includes('feat') || fn.includes('bullet') || fn.includes('highlight')) && !bulletText) setBulletText(cleanQuotes(ex));
+      if (fn.includes('ingred') && !ingredientList) setIngredientList(cleanQuotes(ex));
     });
-    setPlaceholders(newPlaceholders);
+  }, [platform]);
 
-    // Load pre-populated presets for other fields (Examples from spreadsheet)
-    otherContent.forEach(field => {
-      const fieldName = field['Field'] || field['Attribute'] || '';
-      let stateKey = '';
-      if (fieldName.toLowerCase().includes('desc')) stateKey = 'desc';
-      else if (fieldName.toLowerCase().includes('feat') || fieldName.toLowerCase().includes('bullet')) stateKey = 'bullets';
-      else if (fieldName.toLowerCase().includes('ingred')) stateKey = 'ingred';
-
-      const ex1 = field['Example 1'] || '';
-      
-      if (stateKey === 'desc' && !description) setDescription(cleanQuotes(ex1));
-      if (stateKey === 'bullets' && !bullets) setBullets(cleanQuotes(ex1));
-      if (stateKey === 'ingred' && !ingredients) setIngredients(cleanQuotes(ex1));
-    });
-
-  }, [platform, skuId, skus]);
-
-  // Helpers
-  const getPlaybookData = (sheetName) => {
-    const rawRows = CATALOG_DATA[sheetName] || [];
-    let headerIdx = -1;
-    for (let i = 0; i < rawRows.length; i++) {
-      const row = rawRows[i];
-      if (row.includes("Field") || row.includes("Attribute")) {
-        headerIdx = i;
-        break;
-      }
-    }
-    if (headerIdx === -1) return { rows: [] };
-    const rawHeaders = rawRows[headerIdx];
-    const dataRows = [];
-    for (let i = headerIdx + 1; i < rawRows.length; i++) {
-      const row = rawRows[i];
-      const nonAmp = row.filter(cell => cell && cell.trim() !== "");
-      if (nonAmp.length === 0) continue;
-      if (nonAmp.length === 1 && nonAmp[0].trim() === nonAmp[0].trim().toUpperCase()) {
-        dataRows.push({ isSection: true, title: nonAmp[0].trim() });
-        continue;
-      }
-      const rowObj = { isSection: false };
-      for (let j = 0; j < rawHeaders.length; j++) {
-        const headerName = rawHeaders[j];
-        if (headerName && headerName.trim() !== "") {
-          rowObj[headerName.trim()] = row[j] !== undefined && row[j] !== null ? String(row[j]).trim() : "";
-        }
-      }
-      dataRows.push(rowObj);
-    }
-    return { rows: dataRows };
-  };
-
-  const detectSize = (skuName) => {
-    const regex = /\b\d+\s*(?:ml|g|ML|G|oz|wipes|s|S|N|kg|KG)\b|\b\d+'s\b/i;
-    const match = skuName.match(regex);
-    return match ? match[0] : '';
-  };
-
-  const cleanQuotes = (str) => {
-    if (!str) return '';
-    return str.replace(/^["']|["']$/g, '').replace(/\\n/g, '\n');
-  };
-
-  const cleanId = (str) => {
-    if (!str) return 'unknown';
-    return str.toLowerCase().replace(/[^a-z0-9]/g, '-');
-  };
-
-  const parseNumberLimit = (limitStr) => {
-    if (!limitStr) return null;
-    const cleanStr = limitStr.replace(/,/g, '');
-    const match = cleanStr.match(/\d+/);
-    return match ? parseInt(match[0], 10) : null;
-  };
-
-  const parseRangeLimit = (rangeStr) => {
-    if (!rangeStr || rangeStr.toLowerCase() === 'none') return null;
-    const cleanStr = rangeStr.replace(/,/g, '');
-    const minMaxMatch = cleanStr.match(/(\d+)\s*[-–]\s*(\d+)/);
-    if (minMaxMatch) {
-      return { min: parseInt(minMaxMatch[1], 10), max: parseInt(minMaxMatch[2], 10) };
-    }
-    const plusMatch = cleanStr.match(/(\d+)\s*\+/);
-    if (plusMatch) {
-      return { min: parseInt(plusMatch[1], 10), max: 9999 };
-    }
-    return null;
-  };
-
-  // Compile Dynamic Title
-  const compileTitle = () => {
-    const formulaParts = titleFormula.split(/[·•\-\+]/).map(p => p.trim()).filter(p => p !== '');
-    const values = [];
-    formulaParts.forEach(p => {
-      const val = placeholders[p] || '';
-      if (val && val.trim() !== '') {
-        values.push(val.trim());
-      }
-    });
-
-    let separator = ' ';
-    if (platform === 'FirstCry (2)') separator = ' - ';
-    
-    return values.join(separator);
-  };
-
-  const compiledTitle = compileTitle();
   const skuObj = skus.find(s => s.id === skuId) || { portfolio: '', category: '', owner: '', name: '' };
+  const qualityScore = calcQualityScore(titleText, description, bulletText);
+  const scoreInfo = getScoreLabel(qualityScore);
+  const hardLimit = parseHardLimit(titleSpecs.limit);
+  const targetRange = parseTargetRange(titleSpecs.target);
 
-  // Character limit alerts helpers
-  const getCounterClass = (length, ruleLimit, ruleRange) => {
-    const hardLimit = parseNumberLimit(ruleLimit);
-    const targetRange = parseRangeLimit(ruleRange);
-    
-    if (hardLimit && length > hardLimit) return 'char-counter limit-exceeded';
-    if (targetRange && (length < targetRange.min || length > targetRange.max)) return 'char-counter limit-warning';
-    return 'char-counter limit-safe';
-  };
-
-  const handleCopy = (fieldKey, value) => {
-    if (!value || value.trim() === '') {
-      triggerToast('Field is empty!');
-      return;
-    }
+  const handleCopy = (key, value) => {
+    if (!value?.trim()) { triggerToast('Field is empty!'); return; }
     navigator.clipboard.writeText(value).then(() => {
-      triggerToast('Copied to clipboard!');
-    }).catch(() => {
-      triggerToast('Copy failed!');
+      setCopiedKey(key);
+      triggerToast('Copied!');
+      setTimeout(() => setCopiedKey(null), 2000);
     });
   };
 
@@ -300,317 +282,495 @@ export default function BuilderView({ presetPlatform, presetSkuId, clearPresetSk
     setTimeout(() => setToast({ show: false, message: '' }), 2000);
   };
 
-  const platforms = Object.keys(CATALOG_DATA).filter(k => 
-    k !== "SKU" && k !== "Index" && k !== "L1 Priority Matrix"
-  );
+  const insertIngredient = (key, val) => {
+    if (!val?.trim()) return;
+    const cursor = document.getElementById('title-textarea');
+    if (!cursor) { setTitleText(prev => prev + ' ' + val.trim()); return; }
+    const start = cursor.selectionStart;
+    const end = cursor.selectionEnd;
+    const newVal = titleText.slice(0, start) + val.trim() + titleText.slice(end);
+    setTitleText(newVal);
+    setTimeout(() => {
+      cursor.selectionStart = cursor.selectionEnd = start + val.trim().length;
+      cursor.focus();
+    }, 0);
+  };
+
+  const INGREDIENT_FIELDS = [
+    { key: 'brand',         label: 'Brand',           icon: <Award style={{ width: 12, height: 12 }} />,      placeholder: 'e.g. Himalaya',        color: '#6366f1' },
+    { key: 'heroPromise',   label: 'Hero Promise',     icon: <Flame style={{ width: 12, height: 12 }} />,      placeholder: 'e.g. Purifying',       color: '#ef4444' },
+    { key: 'productType',   label: 'Product Type',     icon: <Package style={{ width: 12, height: 12 }} />,    placeholder: 'e.g. Face Wash',       color: '#0ea5e9' },
+    { key: 'heroIngredient',label: 'Hero Ingredient',  icon: <Beaker style={{ width: 12, height: 12 }} />,     placeholder: 'e.g. Neem',            color: '#10b981' },
+    { key: 'skinConcern',   label: 'Skin / Concern',   icon: <Target style={{ width: 12, height: 12 }} />,     placeholder: 'e.g. Oily Skin',       color: '#f59e0b' },
+    { key: 'size',          label: 'Pack Size',         icon: <Tag style={{ width: 12, height: 12 }} />,        placeholder: 'e.g. 400ml',           color: '#8b5cf6' },
+    { key: 'qualifier',     label: 'User Qualifier',   icon: <Star style={{ width: 12, height: 12 }} />,       placeholder: 'e.g. For Men & Women', color: '#ec4899' },
+    { key: 'claim',         label: 'Free-from / Claim',icon: <CheckCircle style={{ width: 12, height: 12 }} />, placeholder: 'e.g. Paraben-Free',   color: '#14b8a6' },
+  ];
+
+  // Bullet lines for PDP
+  const bulletLines = bulletText.split('\n').filter(l => l.trim() !== '');
 
   return (
     <div className="view-section">
-      <div className="page-header">
+      {/* ── Page Header ── */}
+      <div className="bld-page-header">
         <div>
-          <h1>Dynamic Title & PDP Content Builder</h1>
-          <p>Assemble your product content fields under the target formula constraints of each platform with real-time character limit safety.</p>
+          <div className="bld-eyebrow"><Sparkles style={{ width: 13, height: 13 }} /> Title &amp; PDP Builder</div>
+          <h1 className="bld-main-title">Interactive Content Builder</h1>
+          <p className="bld-main-sub">Craft platform-optimised titles and PDP content with live character feedback and a real-time preview.</p>
         </div>
       </div>
 
-      <div className="builder-workspace">
-        {/* Left Column Inputs */}
-        <div className="builder-inputs-column">
-          
-          {/* Panel 1: Configuration */}
-          <div className="builder-card">
-            <div className="card-header-icon">
-              <Sliders />
+      <div className="bld-workspace">
+        {/* ══════════════════════ LEFT COLUMN ══════════════════════ */}
+        <div className="bld-left">
+
+          {/* ── Panel 1: Configuration ── */}
+          <div className="bld-card">
+            <div className="bld-card-header">
+              <Sliders style={{ width: 18, height: 18 }} />
               <h2>1. Configuration</h2>
             </div>
-            
-            <div className="form-grid-2">
-              <div className="form-group">
+            <div className="bld-form-grid2">
+              <div className="bld-form-group">
                 <label>Target Channel</label>
-                <select value={platform} onChange={(e) => setPlatform(e.target.value)}>
-                  {platforms.map(p => (
-                    <option key={p} value={p}>{p.replace(' (2)', '')}</option>
-                  ))}
+                <select value={platform} onChange={e => setPlatform(e.target.value)}>
+                  {platforms.map(p => <option key={p} value={p}>{p.replace(' (2)', '')}</option>)}
                 </select>
               </div>
-              
-              <div className="form-group">
-                <label>Select Himalaya SKU</label>
-                <select value={skuId} onChange={(e) => setSkuId(e.target.value)}>
-                  <optgroup label="Beauty Portfolio">
-                    {skus.filter(s => s.portfolio === 'Beauty').map(s => (
-                      <option key={s.id} value={s.id}>{s.name}</option>
-                    ))}
-                  </optgroup>
-                  <optgroup label="Baby Portfolio">
-                    {skus.filter(s => s.portfolio === 'Baby').map(s => (
-                      <option key={s.id} value={s.id}>{s.name}</option>
-                    ))}
-                  </optgroup>
+              <div className="bld-form-group">
+                <label>Category</label>
+                <select value={categoryFilter} onChange={e => handleCategoryFilterChange(e.target.value)}>
+                  <option value="Beauty">Beauty</option>
+                  <option value="Baby">Baby</option>
                 </select>
               </div>
-            </div>
-
-            <div className="sku-meta-badge-row">
-              <span className="meta-badge portfolio"><FolderOpen style={{ width: '12px', height: '12px', verticalAlign: 'middle', marginRight: '4px' }} /> {skuObj.portfolio} Portfolio</span>
-              <span className="meta-badge category"><i className="fa-solid fa-leaf"></i> Segment: {skuObj.category}</span>
-              <span className="meta-badge owner"><i className="fa-solid fa-user-circle"></i> Owner: {skuObj.owner}</span>
             </div>
           </div>
 
-          {/* Panel 2: Title Builder */}
-          <div className="builder-card">
-            <div className="card-header-icon">
-              <Heading />
-              <h2>2. Best-Practice Title Builder</h2>
+          {/* ── Panel 2: Title Builder ── */}
+          <div className="bld-card">
+            <div className="bld-card-header">
+              <Heading style={{ width: 18, height: 18 }} />
+              <h2>2. Title Builder</h2>
             </div>
 
-            <div className="formula-box">
-              <span className="formula-label">Best-Practice Formula:</span>
-              <div className="formula-display">
-                {titleFormula.split(/[·•\-\+]/).map(p => p.trim()).filter(p => p !== '').map((p, index) => {
-                  const hasVal = placeholders[p] && placeholders[p].trim() !== '';
-                  return (
-                    <span 
-                      key={index} 
-                      className={`formula-pill ${hasVal ? 'filled' : 'active'}`}
-                    >
-                      {p}
-                    </span>
-                  );
-                })}
+            {/* Spec bar */}
+            <div className="bld-spec-bar">
+              <div className="bld-spec-item">
+                <span className="bld-spec-dot red" />
+                <span className="bld-spec-label">Hard Limit:</span>
+                <span className="bld-spec-val">{titleSpecs.limit}</span>
+              </div>
+              <div className="bld-spec-sep" />
+              <div className="bld-spec-item">
+                <span className="bld-spec-dot green" />
+                <span className="bld-spec-label">Target Range:</span>
+                <span className="bld-spec-val">{titleSpecs.target}</span>
               </div>
             </div>
 
-            <div className="placeholder-inputs-container">
-              {Object.keys(placeholders).map((p, index) => {
-                const def = definitions.find(d => d.placeholder.toLowerCase() === p.toLowerCase());
-                const helperEx = def ? (skuObj.portfolio === 'Beauty' ? def.beautyEx : def.babyEx) : '';
-                const placeholderHint = helperEx ? `e.g., ${helperEx}` : `Enter ${p}`;
-
-                return (
-                  <div className="form-group field-with-limit" key={index}>
-                    <label>{p}</label>
-                    <input 
-                      type="text" 
-                      value={placeholders[p] || ''} 
-                      placeholder={placeholderHint}
-                      onChange={(e) => setPlaceholders({ ...placeholders, [p]: e.target.value })}
-                    />
-                  </div>
-                );
-              })}
-            </div>
-
-            <div className="field-side-spec" style={{ gridColumn: '1 / -1', marginTop: '20px' }}>
-              <p><strong>Channel Title Specification Limits:</strong></p>
-              <p><i className="fa-solid fa-triangle-exclamation"></i> <strong>Hard Cap Limit:</strong> {titleSpecs.limit} | <strong>Target Optimized Range:</strong> {titleSpecs.target}</p>
-              {titleSpecs.notes && <p><i className="fa-solid fa-circle-info"></i> <strong>Notes:</strong> {titleSpecs.notes}</p>}
-              <div className="field-meta-row" style={{ marginTop: '10px', borderTop: '1px solid var(--border-color)', paddingTop: '10px' }}>
-                <span>Current Compile Length:</span>
-                <span className={getCounterClass(compiledTitle.length, titleSpecs.limit, titleSpecs.target)}>
-                  {compiledTitle.length} chars
+            {/* Title textarea */}
+            <div className="bld-title-area">
+              <div className="bld-title-label-row">
+                <label className="bld-label">Your Title</label>
+                <span className={counterClass(titleText.length, titleSpecs.limit, titleSpecs.target)}>
+                  {titleText.length} / {hardLimit || 200} chars
+                  {targetRange && titleText.length >= targetRange.min && titleText.length <= targetRange.max
+                    ? ' ✓ In range' : ''}
                 </span>
               </div>
+              {/* Visual char bar */}
+              <div className="bld-char-bar">
+                <div
+                  className={`bld-char-fill ${
+                    hardLimit && titleText.length > hardLimit ? 'over' :
+                    targetRange && titleText.length >= targetRange.min && titleText.length <= targetRange.max ? 'good' : 'warn'
+                  }`}
+                  style={{ width: `${Math.min((titleText.length / (hardLimit || 200)) * 100, 100)}%` }}
+                />
+                {targetRange && (
+                  <>
+                    <div className="bld-char-marker" style={{ left: `${(targetRange.min / (hardLimit || 200)) * 100}%` }} title={`Target start: ${targetRange.min}`} />
+                    <div className="bld-char-marker" style={{ left: `${Math.min((targetRange.max / (hardLimit || 200)) * 100, 100)}%` }} title={`Target end: ${targetRange.max}`} />
+                  </>
+                )}
+              </div>
+              <textarea
+                id="title-textarea"
+                className="bld-title-textarea"
+                value={titleText}
+                onChange={e => setTitleText(e.target.value)}
+                placeholder="Write your product title here… use the ingredient blocks below to craft and insert key components."
+                rows={3}
+              />
+              {titleSpecs.notes && (
+                <div className="bld-note-tip">
+                  <Info style={{ width: 12, height: 12 }} />
+                  <span>{titleSpecs.notes}</span>
+                </div>
+              )}
             </div>
+
+            {/* Ingredient blocks */}
+            <div className="bld-ing-header">
+              <Lightbulb style={{ width: 14, height: 14, color: '#c39a3c' }} />
+              <span>Build blocks — click <strong>Insert ↑</strong> to add any piece to your title at cursor position</span>
+            </div>
+            <div className="bld-ing-grid">
+              {INGREDIENT_FIELDS.map(f => (
+                <div key={f.key} className="bld-ing-block" style={{ '--ing-color': f.color }}>
+                  <div className="bld-ing-block-label">
+                    <span className="bld-ing-icon" style={{ color: f.color }}>{f.icon}</span>
+                    <span>{f.label}</span>
+                  </div>
+                  <div className="bld-ing-input-row">
+                    <input
+                      type="text"
+                      value={ingredients[f.key]}
+                      placeholder={f.placeholder}
+                      onChange={e => setIngredients(prev => ({ ...prev, [f.key]: e.target.value }))}
+                      className="bld-ing-input"
+                    />
+                    <button
+                      className="bld-ing-insert-btn"
+                      title={`Insert "${f.label}" into title`}
+                      onClick={() => insertIngredient(f.key, ingredients[f.key])}
+                      style={{ '--btn-c': f.color }}
+                    >
+                      Insert ↑
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Quick copy title */}
+            <button className="bld-copy-title-btn" onClick={() => handleCopy('title', titleText)}>
+              {copiedKey === 'title' ? <CheckCircle style={{ width: 14, height: 14 }} /> : <Copy style={{ width: 14, height: 14 }} />}
+              {copiedKey === 'title' ? 'Copied!' : 'Copy Title'}
+            </button>
           </div>
 
-          {/* Panel 3: Other Content Fields */}
-          <div className="builder-card">
-            <div className="card-header-icon">
-              <AlignLeft />
-              <h2>3. Product Page Fields</h2>
+          {/* ── Panel 3: PDP Content ── */}
+          <div className="bld-card">
+            <div className="bld-card-header">
+              <AlignLeft style={{ width: 18, height: 18 }} />
+              <h2>3. Product Page Content</h2>
             </div>
 
-            {otherSpecs.map((field, index) => {
-              const fieldName = field['Field'] || field['Attribute'] || '';
+            {otherSpecs.length === 0 && (
+              <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>Select a platform above to load PDP field specs.</p>
+            )}
+
+            {otherSpecs.map((field, idx) => {
+              const fn = field['Field'] || field['Attribute'] || '';
+              const isDesc = fn.toLowerCase().includes('desc');
+              const isBullet = fn.toLowerCase().includes('feat') || fn.toLowerCase().includes('bullet') || fn.toLowerCase().includes('highlight');
+              const isIngred = fn.toLowerCase().includes('ingred');
+              const stateVal = isDesc ? description : isBullet ? bulletText : isIngred ? ingredientList : '';
+              const setFn = isDesc ? setDescription : isBullet ? setBulletText : isIngred ? setIngredientList : null;
+              if (!setFn) return null;
+
+              const copyKey = isDesc ? 'desc' : isBullet ? 'bullets' : 'ingred';
               const limit = field['Hard Limit'] || 'None';
               const target = field['Target Range'] || 'None';
-              const formula = field['Best-Practice Formula'] || '';
-              const notes = field['Notes'] || '';
-              
-              let stateVal = '';
-              let setStateFn = null;
-              if (fieldName.toLowerCase().includes('desc')) {
-                stateVal = description;
-                setStateFn = setDescription;
-              } else if (fieldName.toLowerCase().includes('feat') || fieldName.toLowerCase().includes('bullet')) {
-                stateVal = bullets;
-                setStateFn = setBullets;
-              } else if (fieldName.toLowerCase().includes('ingred')) {
-                stateVal = ingredients;
-                setStateFn = setIngredients;
-              }
 
               return (
-                <div key={index} style={{ marginBottom: '24px', paddingBottom: '24px', borderBottom: '1px dashed var(--border-color)' }}>
-                  <div className="form-group">
-                    <label>{fieldName}</label>
-                    <textarea 
-                      value={stateVal}
-                      placeholder={`Enter ${fieldName.toLowerCase()}...`}
-                      onChange={(e) => setStateFn(e.target.value)}
+                <div key={idx} className="bld-field-block">
+                  <div className="bld-field-block-header">
+                    <div>
+                      <div className="bld-label">{fn}</div>
+                      <div className="bld-field-specs">
+                        <span className="bld-spec-chip red">Limit: {limit}</span>
+                        <span className="bld-spec-chip green">Target: {target}</span>
+                        <span className={counterClass(stateVal.length, limit, target)} style={{ marginLeft: 'auto' }}>
+                          {stateVal.length} chars
+                        </span>
+                      </div>
+                    </div>
+                    <button className="bld-copy-sm" onClick={() => handleCopy(copyKey, stateVal)}>
+                      {copiedKey === copyKey ? <CheckCircle style={{ width: 12, height: 12 }} /> : <Copy style={{ width: 12, height: 12 }} />}
+                    </button>
+                  </div>
+                  {/* Visual bar */}
+                  <div className="bld-char-bar" style={{ marginBottom: 8 }}>
+                    <div
+                      className={`bld-char-fill ${
+                        parseHardLimit(limit) && stateVal.length > parseHardLimit(limit) ? 'over' :
+                        parseTargetRange(target) && stateVal.length >= parseTargetRange(target).min && stateVal.length <= parseTargetRange(target).max ? 'good' : 'warn'
+                      }`}
+                      style={{ width: `${Math.min((stateVal.length / (parseHardLimit(limit) || 500)) * 100, 100)}%` }}
                     />
                   </div>
-                  <div className="field-side-spec">
-                    <p><strong>{fieldName} Guidelines:</strong></p>
-                    {formula && <p><strong>Formula:</strong> <span className="formula-text" style={{ fontSize: '11px' }}>{formula}</span></p>}
-                    <p><i className="fa-solid fa-circle-info"></i> <strong>Target Range:</strong> {target} | <strong>Hard Limit:</strong> {limit}</p>
-                    {notes && <p><i className="fa-solid fa-lightbulb"></i> <strong>Tip:</strong> {notes}</p>}
-                    <div className="field-meta-row" style={{ marginTop: '10px', borderTop: '1px solid var(--border-color)', paddingTop: '10px' }}>
-                      <span>Current Length:</span>
-                      <span className={getCounterClass(stateVal.length, limit, target)}>
-                        {stateVal.length} chars
-                      </span>
+                  <textarea
+                    className="bld-textarea"
+                    value={stateVal}
+                    onChange={e => setFn(e.target.value)}
+                    placeholder={
+                      isBullet
+                        ? 'One bullet per line.\ne.g. Purifying Neem extract removes excess oil\nSulphate-free, Paraben-free formula'
+                        : `Enter ${fn.toLowerCase()}…`
+                    }
+                    rows={isBullet ? 6 : 4}
+                  />
+                  {field['Notes'] && (
+                    <div className="bld-note-tip">
+                      <Info style={{ width: 12, height: 12 }} />
+                      <span>{field['Notes']}</span>
                     </div>
-                  </div>
+                  )}
                 </div>
               );
             })}
           </div>
-
         </div>
 
-        {/* Right Column Previews */}
-        <div className="builder-preview-column">
-          <div className="preview-card sticky-card">
-            
-            <div className="preview-header-tabs">
-              <button 
-                className={`preview-tab ${previewTab === 'mobile' ? 'active' : ''}`}
+        {/* ══════════════════════ RIGHT COLUMN — STICKY PREVIEW ══════════════════════ */}
+        <div className="bld-right">
+          <div className="bld-preview-card">
+
+            {/* Tabs */}
+            <div className="bld-preview-tabs">
+              <button
+                className={`bld-preview-tab ${previewTab === 'mobile' ? 'active' : ''}`}
                 onClick={() => setPreviewTab('mobile')}
               >
-                <Smartphone style={{ width: '16px', height: '16px', display: 'inline', marginRight: '6px', verticalAlign: 'middle' }} /> 
-                Mobile Search Mockup
+                <Smartphone style={{ width: 14, height: 14 }} />
+                Mobile Search
               </button>
-              <button 
-                className={`preview-tab ${previewTab === 'pdp' ? 'active' : ''}`}
+              <button
+                className={`bld-preview-tab ${previewTab === 'pdp' ? 'active' : ''}`}
                 onClick={() => setPreviewTab('pdp')}
               >
-                <Monitor style={{ width: '16px', height: '16px', display: 'inline', marginRight: '6px', verticalAlign: 'middle' }} /> 
+                <Monitor style={{ width: 14, height: 14 }} />
                 PDP View
               </button>
             </div>
 
-            <div className="preview-body">
-              {previewTab === 'mobile' ? (
-                <div className="preview-content-panel active">
-                  <div className="mock-device-bezel">
-                    <div className="mock-mobile-header">
-                      <i className="fa-solid fa-chevron-left"></i>
-                      <div className="mock-search-bar">himalaya {skuObj.category.toLowerCase() || 'product'}</div>
-                      <i className="fa-solid fa-cart-shopping"></i>
-                    </div>
-                    <div className="mock-search-results">
-                      <div className="mock-product-card">
-                        <div className="mock-product-image-container">
-                          <div className="image-placeholder-inner">
-                            <i className="fa-regular fa-image placeholder-image-icon"></i>
-                            <span>[Image Placeholder]</span>
-                            <small>{skuObj.portfolio} - {skuObj.category}</small>
+            <div className="bld-preview-body">
+
+              {/* ── MOBILE MOCKUP ── */}
+              {previewTab === 'mobile' && (
+                <div className="bld-mobile-wrap">
+                  <div className="bld-phone-container">
+                    {/* Side buttons */}
+                    <div className="bld-phone-btn bld-btn-silent" />
+                    <div className="bld-phone-btn bld-btn-volup" />
+                    <div className="bld-phone-btn bld-btn-voldown" />
+                    <div className="bld-phone-btn bld-btn-power" />
+                    
+                    <div className="bld-phone">
+                      {/* Dynamic Island / Camera pill */}
+                      <div className="bld-phone-island" />
+                      
+                      {/* Screen Wrapper */}
+                      <div className="bld-phone-screen">
+                        {/* Status bar */}
+                        <div className="bld-phone-status">
+                          <span style={{ position: 'relative', left: '10px' }}>9:41</span>
+                          <div className="bld-status-icons" style={{ position: 'relative', right: '10px' }}>
+                            <span>📶</span>
+                            <span>WiFi</span>
+                            <span>🔋</span>
                           </div>
                         </div>
-                        <div className="mock-product-info">
-                          <span className="mock-brand-tag">Himalaya Wellness</span>
-                          <h4 className="mock-product-title">{compiledTitle || "Himalaya Product Title Preview"}</h4>
-                          <div className="mock-rating">
-                            <i className="fa-solid fa-star"></i>
-                            <i className="fa-solid fa-star"></i>
-                            <i className="fa-solid fa-star"></i>
-                            <i className="fa-solid fa-star"></i>
-                            <i className="fa-solid fa-star-half-stroke"></i>
-                            <span>(482)</span>
+
+                        {/* Amazon-like header */}
+                        <div className="bld-phone-header">
+                          <div className="bld-amz-logo">amazon</div>
+                          <div className="bld-amz-search">
+                            <Search style={{ width: 10, height: 10 }} />
+                            <span>himalaya {(skuObj.category || 'facewash').toLowerCase()}</span>
                           </div>
-                          <div className="mock-price-row">
-                            <span className="mock-price">₹299</span>
-                            <span className="mock-mrp">₹350</span>
-                            <span className="mock-discount">(15% OFF)</span>
+                          <ShoppingCart style={{ width: 14, height: 14, color: '#fff' }} />
+                        </div>
+
+                        {/* Delivery bar */}
+                        <div className="bld-amz-deliver">
+                          <span>📍</span>
+                          <span>Deliver to Mumbai 400001</span>
+                        </div>
+
+                        {/* Search results (scrollable) */}
+                        <div className="bld-amz-results">
+                          <div className="bld-amz-result-label">Results for "{(skuObj.category || 'product').toLowerCase()}"</div>
+
+                          {/* Product card */}
+                          <div className="bld-amz-card">
+                            <div className="bld-amz-card-img">
+                              <Package style={{ width: 28, height: 28, color: '#ccc' }} />
+                              <div className="bld-amz-img-label">{skuObj.category || 'Product'}</div>
+                            </div>
+                            <div className="bld-amz-card-info">
+                              <div className="bld-amz-brand">HIMALAYA</div>
+                              <div className="bld-amz-title">{titleText || 'Your product title will appear here…'}</div>
+                              <div className="bld-amz-stars">
+                                {'★★★★'.split('').map((s, i) => <span key={i}>{s}</span>)}
+                                <span className="bld-amz-halfstar">★</span>
+                                <span className="bld-amz-reviews">(2,814)</span>
+                              </div>
+                              <div className="bld-amz-price-row">
+                                <span className="bld-amz-price">₹299</span>
+                                <span className="bld-amz-mrp">₹350</span>
+                                <span className="bld-amz-disc">15% off</span>
+                              </div>
+                              <div className="bld-amz-delivery">FREE delivery by <strong>Tomorrow</strong></div>
+                              <div className="bld-amz-prime">🔵 Prime</div>
+                            </div>
                           </div>
-                          <span className="mock-delivery">FREE delivery <strong>Tomorrow</strong></span>
-                          <button className="mock-add-btn">Add to Cart</button>
+
+                          {/* Faded ghost second result */}
+                          <div className="bld-amz-card ghost">
+                            <div className="bld-amz-card-img ghost-img" />
+                            <div className="bld-amz-card-info">
+                              <div className="bld-ghost-line" style={{ width: '60%' }} />
+                              <div className="bld-ghost-line" style={{ width: '90%' }} />
+                              <div className="bld-ghost-line" style={{ width: '40%' }} />
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </div>
                   </div>
-                  <p className="preview-disclaimer"><i className="fa-solid fa-info-circle"></i> Displays how title length truncates in mobile search grids. Keep critical keywords within the first 60 characters.</p>
+                  <p className="bld-disclaimer">
+                    <Info style={{ width: 11, height: 11 }} />
+                    Amazon shows ~3 lines on mobile. Keep critical keywords in the first 60 chars.
+                  </p>
                 </div>
-              ) : (
-                <div className="preview-content-panel active">
-                  <div className="mock-pdp-container">
-                    <div className="mock-pdp-layout">
-                      <div className="mock-pdp-images">
-                        <div className="mock-pdp-main-image">
-                          <i className="fa-regular fa-image"></i>
-                          <span>Product Image</span>
-                        </div>
-                        <div className="mock-pdp-thumbs">
-                          <span>Thumb 1</span>
-                          <span>Thumb 2</span>
-                          <span>Thumb 3</span>
-                        </div>
+              )}
+
+              {/* ── PDP VIEW ── */}
+              {previewTab === 'pdp' && (
+                <div className="bld-pdp-wrap">
+                  {/* Breadcrumb */}
+                  <div className="bld-pdp-breadcrumb">
+                    Home <ChevronRight style={{ width: 10, height: 10 }} /> {skuObj.portfolio || 'Beauty'} <ChevronRight style={{ width: 10, height: 10 }} /> {skuObj.category || 'Face Wash'}
+                  </div>
+
+                  <div className="bld-pdp-layout">
+                    {/* Left: images */}
+                    <div className="bld-pdp-images">
+                      <div className="bld-pdp-main-img">
+                        <Package style={{ width: 32, height: 32, color: '#d1d5db' }} />
+                        <span>Main Image</span>
                       </div>
-                      
-                      <div className="mock-pdp-info">
-                        <h1 className="mock-pdp-title-text">{compiledTitle || "Himalaya Product Title Preview"}</h1>
-                        <div className="mock-rating-badge">4.5 ★ | 1,284 ratings</div>
-                        <hr />
-                        
-                        <div className="mock-pdp-bullets-section">
-                          <h3>Key Product Features</h3>
-                          <ul className="mock-pdp-bullets-list">
-                            {bullets ? bullets.split('\n').filter(b => b.trim() !== '').map((bullet, i) => (
-                              <li key={i}>{bullet.trim().replace(/^[\-\•\*]\s*/, '')}</li>
-                            )) : (
-                              <li>Enter key features (one per line) to preview.</li>
-                            )}
+                      <div className="bld-pdp-thumbs">
+                        {[1,2,3,4].map(n => <div key={n} className="bld-pdp-thumb" />)}
+                      </div>
+                    </div>
+
+                    {/* Right: info */}
+                    <div className="bld-pdp-info">
+                      <div className="bld-pdp-brand">Visit the Himalaya Store</div>
+                      <h2 className="bld-pdp-title">{titleText || 'Your product title will appear here…'}</h2>
+
+                      <div className="bld-pdp-rating-row">
+                        <span className="bld-pdp-stars">★★★★☆</span>
+                        <span className="bld-pdp-rcount">2,814 ratings</span>
+                        <span className="bld-pdp-qanda">156 answered questions</span>
+                      </div>
+
+                      <div className="bld-pdp-divider" />
+
+                      <div className="bld-pdp-price-section">
+                        <span className="bld-pdp-price">₹299</span>
+                        <span className="bld-pdp-mrp-label">M.R.P.: <s>₹350</s></span>
+                        <span className="bld-pdp-saving">Save ₹51 (15%)</span>
+                      </div>
+                      <div className="bld-pdp-prime-badge">🔵 Prime — FREE delivery Tomorrow</div>
+
+                      <div className="bld-pdp-divider" />
+
+                      {/* Bullets */}
+                      {bulletLines.length > 0 && (
+                        <div className="bld-pdp-section">
+                          <div className="bld-pdp-section-title">About this item</div>
+                          <ul className="bld-pdp-bullets">
+                            {bulletLines.map((b, i) => (
+                              <li key={i}>{b.replace(/^[-•*]\s*/, '')}</li>
+                            ))}
                           </ul>
                         </div>
-                        
-                        <hr />
-                        <div className="mock-pdp-description-section">
-                          <h3>Product Description</h3>
-                          <p className="mock-pdp-desc-text">{description || 'Enter product description to preview.'}</p>
-                        </div>
+                      )}
 
-                        <hr />
-                        <div className="mock-pdp-ingredients-section">
-                          <h3>Ingredients</h3>
-                          <p className="mock-pdp-ingredients-text">{ingredients || 'Enter ingredient list to preview.'}</p>
+                      {/* Description */}
+                      {description && (
+                        <div className="bld-pdp-section">
+                          <div className="bld-pdp-section-title">Product Description</div>
+                          <p className="bld-pdp-desc">{description}</p>
                         </div>
-                      </div>
+                      )}
+
+                      {/* Ingredients */}
+                      {ingredientList && (
+                        <div className="bld-pdp-section">
+                          <div className="bld-pdp-section-title">Ingredients</div>
+                          <p className="bld-pdp-ingred">{ingredientList}</p>
+                        </div>
+                      )}
+
+                      {!bulletLines.length && !description && !ingredientList && (
+                        <div className="bld-pdp-placeholder">
+                          <AlignLeft style={{ width: 20, height: 20 }} />
+                          <span>Fill in the PDP Content fields on the left to see your Amazon PDP preview.</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
               )}
             </div>
 
-            {/* Consolidated Export Console */}
-            <div className="export-console">
-              <h3>Export Consolidated PDP Content</h3>
-              <div className="copy-buttons-row">
-                <button className="btn btn-primary btn-copy" onClick={() => handleCopy('Title', compiledTitle)}>
-                  <Copy /> Copy Title
-                </button>
-                <button className="btn btn-primary btn-copy" onClick={() => handleCopy('Description', description)}>
-                  <Copy /> Copy Description
-                </button>
-                <button className="btn btn-primary btn-copy" onClick={() => handleCopy('Bullets', bullets)}>
-                  <Copy /> Copy Bullets
-                </button>
-                <button className="btn btn-primary btn-copy" onClick={() => handleCopy('Ingredients', ingredients)}>
-                  <Copy /> Copy Ingredients
-                </button>
+            {/* ── Export Console ── */}
+            <div className="bld-export">
+              <div className="bld-export-title">
+                <Zap style={{ width: 14, height: 14 }} />
+                Export Content
+              </div>
+              <div className="bld-export-grid">
+                {[
+                  { key: 'title', label: 'Title', val: titleText },
+                  { key: 'desc', label: 'Description', val: description },
+                  { key: 'bullets', label: 'Bullets', val: bulletText },
+                  { key: 'ingred', label: 'Ingredients', val: ingredientList },
+                ].map(({ key, label, val }) => (
+                  <button
+                    key={key}
+                    className={`bld-export-btn ${copiedKey === key ? 'copied' : ''}`}
+                    onClick={() => handleCopy(key, val)}
+                  >
+                    {copiedKey === key
+                      ? <><CheckCircle style={{ width: 13, height: 13 }} /> Copied!</>
+                      : <><Copy style={{ width: 13, height: 13 }} /> {label}</>
+                    }
+                  </button>
+                ))}
               </div>
             </div>
+          </div>
 
+          {/* Pro Tips card */}
+          <div className="bld-tips-card">
+            <div className="bld-tips-title">
+              <Star style={{ width: 13, height: 13, color: '#c39a3c' }} />
+              Pro Tips for {platform.replace(' (2)', '')}
+            </div>
+            <ul className="bld-tips-list">
+              <li><span className="bld-tip-dot" />Lead with your strongest benefit in the first 60 chars</li>
+              <li><span className="bld-tip-dot" />Include hero ingredient name for searchability</li>
+              <li><span className="bld-tip-dot" />Add pack size — it drives Add-to-Cart confidence</li>
+              <li><span className="bld-tip-dot" />Avoid ALL CAPS and excessive punctuation</li>
+              {platform === 'Flipkart' && <li><span className="bld-tip-dot orange" />Flipkart auto-builds title from inputs — the Model Name field is critical</li>}
+              {platform.includes('Nykaa') && <li><span className="bld-tip-dot pink" />Nykaa: skin concern + ingredient combo drives discovery</li>}
+              {platform.includes('FirstCry') && <li><span className="bld-tip-dot blue" />FirstCry: stack free-from claims (paraben-free, tear-free) in the title</li>}
+            </ul>
           </div>
         </div>
       </div>
-      
-      {/* Toast popup */}
-      <div className={`toast-notification ${toast.show ? 'show' : ''}`}>
-        {toast.message}
-      </div>
+
+      {/* Toast */}
+      <div className={`bld-toast ${toast.show ? 'show' : ''}`}>{toast.message}</div>
     </div>
   );
 }

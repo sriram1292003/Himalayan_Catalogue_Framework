@@ -1,6 +1,7 @@
+'use client';
 import { useState, useEffect, useRef } from 'react';
 import { CATALOG_DATA } from '@/lib/data';
-import { Search, Filter, FolderOpen } from 'lucide-react';
+import { Search, Filter, FolderOpen, ChevronDown, ChevronUp, BookOpen, Lightbulb, FileText, AlertCircle, Beaker, X } from 'lucide-react';
 
 const cleanId = (str) => {
   if (!str) return 'unknown';
@@ -13,63 +14,66 @@ const platformNameClean = (str) => {
 
 const getPlaybookData = (sheetName) => {
   const rawRows = CATALOG_DATA[sheetName];
-  if (!rawRows || rawRows.length === 0) return { desc: '', headers: [], rows: [] };
-  
-  let desc = "";
-  if (rawRows[0] && rawRows[0][0]) {
-    desc = rawRows[0][0];
-  }
-  if (rawRows[1] && rawRows[1][0] && desc.length < 50) {
-    desc += " — " + rawRows[1][0];
-  }
-  
+  if (!rawRows || rawRows.length === 0) return { desc: '', subtitle: '', headers: [], rows: [] };
+
+  let desc = '';
+  let subtitle = '';
+  if (rawRows[0] && rawRows[0][0]) desc = rawRows[0][0];
+  if (rawRows[1] && rawRows[1][0]) subtitle = rawRows[1][0];
+
   let headerIdx = -1;
   for (let i = 0; i < rawRows.length; i++) {
     const row = rawRows[i];
-    if (row.includes("Field") || row.includes("Attribute")) {
-      headerIdx = i;
-      break;
-    }
+    if (row.includes('Field') || row.includes('Attribute')) { headerIdx = i; break; }
   }
-  
-  if (headerIdx === -1) return { desc, headers: [], rows: [] };
-  
+
+  if (headerIdx === -1) return { desc, subtitle, headers: [], rows: [] };
+
   const rawHeaders = rawRows[headerIdx];
   const dataRows = [];
-  
+
   for (let i = headerIdx + 1; i < rawRows.length; i++) {
     const row = rawRows[i];
-    const nonAmp = row.filter(cell => cell && cell.trim() !== "");
+    const nonAmp = row.filter(cell => cell && cell.trim() !== '');
     if (nonAmp.length === 0) continue;
-    
+
     if (nonAmp.length === 1 && nonAmp[0].trim() === nonAmp[0].trim().toUpperCase()) {
       dataRows.push({ isSection: true, title: nonAmp[0].trim() });
       continue;
     }
-    
+
     const rowObj = { isSection: false };
     for (let j = 0; j < rawHeaders.length; j++) {
       const headerName = rawHeaders[j];
-      if (headerName && headerName.trim() !== "") {
-        rowObj[headerName.trim()] = row[j] !== undefined && row[j] !== null ? String(row[j]).trim() : "";
+      if (headerName && headerName.trim() !== '') {
+        rowObj[headerName.trim()] = row[j] !== undefined && row[j] !== null ? String(row[j]).trim() : '';
       }
     }
-    
-    let category = "Common";
-    if (rowObj["Cat"]) {
-      const catLower = rowObj["Cat"].toLowerCase();
-      if (catLower.includes("beauty")) category = "Beauty";
-      else if (catLower.includes("baby")) category = "Baby";
-      else if (catLower.includes("common") || catLower.includes("both")) category = "Common";
+
+    let category = 'Common';
+    if (rowObj['Cat']) {
+      const catLower = rowObj['Cat'].toLowerCase();
+      if (catLower.includes('beauty')) category = 'Beauty';
+      else if (catLower.includes('baby')) category = 'Baby';
+      else if (catLower.includes('common') || catLower.includes('both')) category = 'Common';
     } else {
-      if (sheetName.includes("Nykaa")) category = "Beauty";
-      if (sheetName.includes("FirstCry")) category = "Baby";
+      if (sheetName.includes('Nykaa')) category = 'Beauty';
+      if (sheetName.includes('FirstCry')) category = 'Baby';
     }
     rowObj._category = category;
     dataRows.push(rowObj);
   }
-  
-  return { desc, headers: rawHeaders.filter(h => h && h.trim() !== ""), rows: dataRows };
+
+  return { desc, subtitle, headers: rawHeaders.filter(h => h && h.trim() !== ''), rows: dataRows };
+};
+
+const PLATFORM_META = {
+  'Amazon':            { color: '#FF9900', bg: '#fff8ee', icon: '🛒', accent: '#e07b00' },
+  'Flipkart':          { color: '#2874F0', bg: '#edf3ff', icon: '🛍️', accent: '#1a5bbf' },
+  'Quick Commerce (2)':{ color: '#F7B731', bg: '#fffbea', icon: '⚡', accent: '#c9900a' },
+  'Nykaa (2)':         { color: '#DB3676', bg: '#fff0f6', icon: '💄', accent: '#a8255a' },
+  'Myntra (2)':        { color: '#FF3F6C', bg: '#fff0f2', icon: '👗', accent: '#c72d52' },
+  'FirstCry (2)':      { color: '#FF6B35', bg: '#fff4f0', icon: '🍼', accent: '#c74d1f' },
 };
 
 export default function PlaybookView({ initialPlatform, highlightField, clearHighlight }) {
@@ -77,18 +81,17 @@ export default function PlaybookView({ initialPlatform, highlightField, clearHig
   const [playbook, setPlaybook] = useState(() => getPlaybookData(initialPlatform || 'Amazon'));
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
-  
+  const [expandedRows, setExpandedRows] = useState(new Set());
+
   const rowRefs = useRef({});
 
-  // Parse playbook data when platform changes
   useEffect(() => {
     setPlaybook(getPlaybookData(platform));
+    setExpandedRows(new Set());
   }, [platform]);
 
-  // Effect to scroll to and highlight a row if redirected
   useEffect(() => {
     if (highlightField && playbook.rows.length > 0) {
-      // Find matching field
       let matchField = highlightField;
       if (highlightField.toLowerCase().includes('title')) matchField = 'Product Name';
       if (highlightField.toLowerCase().includes('description')) matchField = 'Description';
@@ -97,13 +100,11 @@ export default function PlaybookView({ initialPlatform, highlightField, clearHig
 
       const rowId = `${platformNameClean(platform)}-${cleanId(matchField)}`;
       const element = document.getElementById(rowId);
-      
       if (element) {
         setTimeout(() => {
           element.scrollIntoView({ behavior: 'smooth', block: 'center' });
           element.style.outline = '3px solid var(--accent-gold)';
           element.style.transition = 'outline 0.3s ease';
-          
           setTimeout(() => {
             element.style.outline = 'none';
             clearHighlight();
@@ -113,8 +114,19 @@ export default function PlaybookView({ initialPlatform, highlightField, clearHig
     }
   }, [highlightField, playbook, platform]);
 
-  // Filtered rows helper
-  const displayHeaders = playbook.headers.filter(h => h !== "Cat" && h !== "No");
+  const toggleRow = (rowId) => {
+    setExpandedRows(prev => {
+      const next = new Set(prev);
+      if (next.has(rowId)) next.delete(rowId);
+      else next.add(rowId);
+      return next;
+    });
+  };
+
+  const platforms = Object.keys(CATALOG_DATA).filter(k =>
+    k !== 'SKU' && k !== 'Index' && k !== 'L1 Priority Matrix'
+  );
+
   let filteredRows = playbook.rows;
   if (categoryFilter !== 'all') {
     filteredRows = filteredRows.filter(r => r.isSection || r._category === categoryFilter);
@@ -127,170 +139,261 @@ export default function PlaybookView({ initialPlatform, highlightField, clearHig
     });
   }
 
-  const platforms = Object.keys(CATALOG_DATA).filter(k => 
-    k !== "SKU" && k !== "Index" && k !== "L1 Priority Matrix"
-  );
+  const meta = PLATFORM_META[platform] || { color: '#074735', bg: '#e6eee9', icon: '📋', accent: '#0d664d' };
+  const dataRowCount = filteredRows.filter(r => !r.isSection).length;
 
   return (
     <div className="view-section">
-      <div className="page-header">
-        <div>
-          <h1>Platform Playbook Explorer</h1>
-          <p>Detailed input specifications, limits, formulas, and examples extracted from each platform's seller playbooks.</p>
-        </div>
-      </div>
-
-      {/* Platform Tabs */}
-      <div className="platform-tabs-container">
-        <div className="platform-tabs">
-          {platforms.map(p => (
-            <button 
-              key={p}
-              className={`platform-tab-btn ${platform === p ? 'active' : ''}`}
-              onClick={() => {
-                setPlatform(p);
-                setSearchQuery('');
-              }}
-            >
-              {p.replace(' (2)', '')}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Table Box */}
-      <div className="playbook-card">
-        <div className="playbook-meta-header">
-          <div className="playbook-title-area">
-            <h2>{platform.replace(' (2)', '')} Playbook Guidelines</h2>
-            <p className="playbook-desc">{playbook.desc}</p>
+      {/* ── Page Header ── */}
+      <div className="pb-page-header">
+        <div className="pb-header-left">
+          <div className="pb-header-eyebrow">
+            <BookOpen style={{ width: 14, height: 14 }} />
+            <span>Content Framework</span>
           </div>
-          
-          <div className="playbook-filters">
-            <div className="filter-group">
-              <span className="filter-label"><Filter style={{ width: '14px', height: '14px', verticalAlign: 'middle' }} /> Category:</span>
-              <div className="filter-buttons">
-                <button 
-                  className={`btn btn-toggle ${categoryFilter === 'all' ? 'active' : ''}`} 
-                  onClick={() => setCategoryFilter('all')}
-                >All</button>
-                <button 
-                  className={`btn btn-toggle pink ${categoryFilter === 'Beauty' ? 'active' : ''}`} 
-                  onClick={() => setCategoryFilter('Beauty')}
-                >Beauty</button>
-                <button 
-                  className={`btn btn-toggle blue ${categoryFilter === 'Baby' ? 'active' : ''}`} 
-                  onClick={() => setCategoryFilter('Baby')}
-                >Baby</button>
-                <button 
-                  className={`btn btn-toggle grey ${categoryFilter === 'Common' ? 'active' : ''}`} 
-                  onClick={() => setCategoryFilter('Common')}
-                >Common</button>
+          <h1 className="pb-title">Platform Playbook Explorer</h1>
+          <p className="pb-subtitle">Detailed input specifications, hard limits, formulas &amp; examples extracted from each platform's seller playbooks.</p>
+        </div>
+      </div>
+
+      {/* ── Platform Tabs ── */}
+      <div className="pb-tabs-row">
+        {platforms.map(p => {
+          const pmeta = PLATFORM_META[p] || { color: '#074735', bg: '#e6eee9', icon: '📋' };
+          const isActive = platform === p;
+          return (
+            <button
+              key={p}
+              className={`pb-tab ${isActive ? 'pb-tab-active' : ''}`}
+              style={isActive ? { '--tab-color': pmeta.color, '--tab-bg': pmeta.bg } : {}}
+              onClick={() => { setPlatform(p); setSearchQuery(''); setCategoryFilter('all'); }}
+            >
+              <span className="pb-tab-icon">{pmeta.icon}</span>
+              <span>{p.replace(' (2)', '')}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ── Main Table Card ── */}
+      <div className="pb-table-card" style={{ '--platform-color': meta.color, '--platform-bg': meta.bg, '--platform-accent': meta.accent }}>
+
+        {/* Card Header with gradient accent */}
+        <div className="pb-card-header">
+          <div className="pb-card-header-glow" />
+          <div className="pb-card-header-content">
+            <div className="pb-card-title-row">
+              <div className="pb-platform-badge" style={{ background: meta.bg, color: meta.color, borderColor: meta.color + '33' }}>
+                <span style={{ fontSize: 20 }}>{meta.icon}</span>
+                <span>{platform.replace(' (2)', '')} Playbook</span>
+              </div>
+              <div className="pb-row-count-badge">
+                <span style={{ color: meta.color, fontWeight: 700 }}>{dataRowCount}</span>
+                <span>rules</span>
               </div>
             </div>
-            
-            <div className="search-wrapper">
-              <Search />
-              <input 
-                type="text" 
-                placeholder="Search rules..." 
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-            </div>
+            {playbook.desc && <p className="pb-card-desc">{playbook.desc}</p>}
+            {playbook.subtitle && <p className="pb-card-subdesc">{playbook.subtitle}</p>}
           </div>
         </div>
 
-        {/* Specs Table */}
-        <div className="table-scroll-container">
-          <table className="playbook-table">
+        {/* Filters Bar */}
+        <div className="pb-filters-bar">
+          <div className="pb-filters-left">
+            <span className="pb-filter-label"><Filter style={{ width: 13, height: 13 }} /> Category</span>
+            <div className="pb-cat-pills">
+              {[
+                { key: 'all',    label: 'All',    cls: '' },
+                { key: 'Beauty', label: '💄 Beauty', cls: 'beauty' },
+                { key: 'Baby',   label: '🍼 Baby',   cls: 'baby'   },
+                { key: 'Common', label: '📦 Common', cls: 'common' },
+              ].map(c => (
+                <button
+                  key={c.key}
+                  className={`pb-cat-pill ${categoryFilter === c.key ? 'active ' + c.cls : ''}`}
+                  onClick={() => setCategoryFilter(c.key)}
+                >{c.label}</button>
+              ))}
+            </div>
+          </div>
+          <div className="pb-search-box">
+            <Search style={{ width: 15, height: 15 }} />
+            <input
+              type="text"
+              placeholder="Search rules…"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+            />
+            {searchQuery && (
+              <button className="pb-search-clear" onClick={() => setSearchQuery('')}>
+                <X style={{ width: 13, height: 13 }} />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Expand All / Collapse All hint */}
+        {dataRowCount > 0 && (
+          <div className="pb-expand-hint">
+            <span>Click any row or the</span>
+            <ChevronDown style={{ width: 12, height: 12, display: 'inline', verticalAlign: 'middle', margin: '0 3px' }} />
+            <span>arrow to reveal examples &amp; notes</span>
+          </div>
+        )}
+
+        {/* Table */}
+        <div className="pb-table-scroll">
+          <table className="pb-table">
             <thead>
-              <tr>
-                {displayHeaders.map(h => (
-                  <th key={h}>{h}</th>
-                ))}
+              <tr className="pb-thead-tr">
+                <th className="pb-th pb-th-field">Field</th>
+                <th className="pb-th pb-th-limit">Hard Limit</th>
+                <th className="pb-th pb-th-range">Target Range</th>
+                <th className="pb-th pb-th-formula">Best‑Practice Formula</th>
+                <th className="pb-th pb-th-expand"></th>
               </tr>
             </thead>
             <tbody>
-              {filteredRows.map((row, index) => {
-                if (row.isSection) {
-                  return (
-                    <tr className="row-section-divider" key={index}>
-                      <td 
-                        colSpan={displayHeaders.length} 
-                        style={{
-                          backgroundColor: 'var(--primary-green-xlight)',
-                          color: 'var(--primary-green)',
-                          fontWeight: '700',
-                          padding: '12px 16px',
-                          borderBottom: '2px solid var(--border-color)'
-                        }}
-                      >
-                        <FolderOpen style={{ width: '16px', height: '16px', marginRight: '6px', display: 'inline', verticalAlign: 'middle' }} /> 
-                        {row.title}
-                      </td>
-                    </tr>
-                  );
-                }
-
-                const catClass = `row-${row._category.toLowerCase()}`;
-                const rowId = `${platformNameClean(platform)}-${cleanId(row['Field'] || row['Attribute'])}`;
-
-                return (
-                  <tr className={catClass} id={rowId} key={index}>
-                    {displayHeaders.map(h => {
-                      const cellVal = row[h] || '';
-                      
-                      if (h === 'Field' || h === 'Attribute') {
-                        return (
-                          <td key={h} data-label={h}>
-                            <div className="rule-header-title">{cellVal}</div>
-                            <span className={`badge-cat ${row._category.toLowerCase()}`}>{row._category}</span>
-                          </td>
-                        );
-                      } else if (h === 'Best-Practice Formula') {
-                        return (
-                          <td key={h} data-label={h}>
-                            <span className="formula-text">{cellVal || 'N/A'}</span>
-                          </td>
-                        );
-                      } else if (h.includes('Example')) {
-                        return (
-                          <td key={h} data-label={h}>
-                            {cellVal ? (
-                              <div className="example-box">{cellVal}</div>
-                            ) : (
-                              <span style={{ color: 'var(--text-light)', fontStyle: 'italic' }}>None</span>
-                            )}
-                          </td>
-                        );
-                      } else if (h === 'Notes') {
-                        return (
-                          <td key={h} data-label={h}>
-                            <div className="notes-text">{cellVal}</div>
-                          </td>
-                        );
-                      } else if (h === 'Hard Limit' || h === 'Target Range') {
-                        return (
-                          <td key={h} data-label={h} style={{ fontWeight: '500', color: 'var(--text-dark)' }}>
-                            {cellVal || 'N/A'}
-                          </td>
-                        );
-                      } else {
-                        return <td key={h} data-label={h}>{cellVal}</td>;
-                      }
-                    })}
-                  </tr>
-                );
-              })}
-
-              {filteredRows.length === 0 && (
+              {filteredRows.length === 0 ? (
                 <tr>
-                  <td colSpan={displayHeaders.length} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '40px' }}>
-                    <Search style={{ width: '24px', height: '24px', margin: '0 auto 8px', display: 'block', color: 'var(--text-light)' }} />
-                    No rules found matching the current filters.
+                  <td colSpan={5} className="pb-empty-state">
+                    <AlertCircle style={{ width: 28, height: 28 }} />
+                    <p>No rules match your current filters.</p>
                   </td>
                 </tr>
+              ) : (
+                filteredRows.map((row, index) => {
+                  if (row.isSection) {
+                    return (
+                      <tr key={`s-${index}`} className="pb-section-row">
+                        <td colSpan={5}>
+                          <span className="pb-section-inner">
+                            <FolderOpen style={{ width: 14, height: 14 }} />
+                            {row.title}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  }
+
+                  const fieldKey = row['Field'] || row['Attribute'] || '';
+                  const rowId = `${platformNameClean(platform)}-${cleanId(fieldKey)}`;
+                  const isExpanded = expandedRows.has(rowId);
+                  const hasDetails = !!(row['Example 1'] || row['Example 2'] || row['Notes']);
+                  const catClass = `pb-row-${(row._category || 'common').toLowerCase()}`;
+
+                  return (
+                    <>
+                      <tr
+                        key={rowId}
+                        id={rowId}
+                        className={`pb-data-row ${catClass} ${isExpanded ? 'pb-row-expanded' : ''} ${hasDetails ? 'pb-row-clickable' : ''}`}
+                        onClick={() => hasDetails && toggleRow(rowId)}
+                      >
+                        {/* Field */}
+                        <td className="pb-td pb-td-field">
+                          <div className="pb-field-name">{fieldKey}</div>
+                          <span className={`pb-cat-badge pb-cat-${(row._category || 'common').toLowerCase()}`}>
+                            {row._category || 'Common'}
+                          </span>
+                        </td>
+
+                        {/* Hard Limit */}
+                        <td className="pb-td pb-td-limit">
+                          {row['Hard Limit'] ? (
+                            <span className="pb-limit-chip">{row['Hard Limit']}</span>
+                          ) : (
+                            <span className="pb-na">—</span>
+                          )}
+                        </td>
+
+                        {/* Target Range */}
+                        <td className="pb-td pb-td-range">
+                          {row['Target Range'] ? (
+                            <span className="pb-range-chip">{row['Target Range']}</span>
+                          ) : (
+                            <span className="pb-na">—</span>
+                          )}
+                        </td>
+
+                        {/* Best-Practice Formula */}
+                        <td className="pb-td pb-td-formula">
+                          {row['Best-Practice Formula'] ? (
+                            <div className="pb-formula-block">
+                              <Beaker style={{ width: 12, height: 12, flexShrink: 0, marginTop: 2 }} />
+                              <span>{row['Best-Practice Formula']}</span>
+                            </div>
+                          ) : (
+                            <span className="pb-na">—</span>
+                          )}
+                        </td>
+
+                        {/* Expand Toggle */}
+                        <td className="pb-td pb-td-expand">
+                          {hasDetails && (
+                            <button
+                              className={`pb-expand-btn ${isExpanded ? 'active' : ''}`}
+                              onClick={e => { e.stopPropagation(); toggleRow(rowId); }}
+                              style={{ '--btn-color': meta.color }}
+                              aria-label={isExpanded ? 'Collapse' : 'Expand'}
+                            >
+                              {isExpanded
+                                ? <ChevronUp style={{ width: 15, height: 15 }} />
+                                : <ChevronDown style={{ width: 15, height: 15 }} />
+                              }
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+
+                      {/* Expandable Detail Row */}
+                      {hasDetails && isExpanded && (
+                        <tr key={`${rowId}-detail`} className={`pb-detail-row ${catClass}`}>
+                          <td colSpan={5} className="pb-detail-td">
+                            <div className="pb-detail-panel">
+                              {/* Examples */}
+                              {(row['Example 1'] || row['Example 2']) && (
+                                <div className="pb-detail-section">
+                                  <div className="pb-detail-section-label">
+                                    <Lightbulb style={{ width: 13, height: 13 }} />
+                                    <span>Practice Examples</span>
+                                  </div>
+                                  <div className="pb-examples-grid">
+                                    {row['Example 1'] && (
+                                      <div className="pb-example-card pb-example-1">
+                                        <div className="pb-example-num">Example 1</div>
+                                        <p>{row['Example 1']}</p>
+                                      </div>
+                                    )}
+                                    {row['Example 2'] && (
+                                      <div className="pb-example-card pb-example-2">
+                                        <div className="pb-example-num">Example 2</div>
+                                        <p>{row['Example 2']}</p>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Notes */}
+                              {row['Notes'] && (
+                                <div className="pb-detail-section">
+                                  <div className="pb-detail-section-label">
+                                    <FileText style={{ width: 13, height: 13 }} />
+                                    <span>Compliance Notes</span>
+                                  </div>
+                                  <div className="pb-notes-block">
+                                    <p>{row['Notes']}</p>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </>
+                  );
+                })
               )}
             </tbody>
           </table>
