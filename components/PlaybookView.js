@@ -362,13 +362,31 @@ export default function PlaybookView({ initialPlatform, highlightField, clearHig
                                     {row['Example 1'] && (
                                       <div className="pb-example-card pb-example-1">
                                         <div className="pb-example-num">Example 1</div>
-                                        <p>{row['Example 1']}</p>
+                                        {row['Example 1'].startsWith('/images/') ? (
+                                          <img
+                                            src={row['Example 1']}
+                                            alt="Example 1"
+                                            className="pb-example-img"
+                                            style={{ width: '100%', borderRadius: 8, marginTop: 8, display: 'block' }}
+                                          />
+                                        ) : (
+                                          <p>{row['Example 1']}</p>
+                                        )}
                                       </div>
                                     )}
                                     {row['Example 2'] && (
                                       <div className="pb-example-card pb-example-2">
                                         <div className="pb-example-num">Example 2</div>
-                                        <p>{row['Example 2']}</p>
+                                        {row['Example 2'].startsWith('/images/') ? (
+                                          <img
+                                            src={row['Example 2']}
+                                            alt="Example 2"
+                                            className="pb-example-img"
+                                            style={{ width: '100%', borderRadius: 8, marginTop: 8, display: 'block' }}
+                                          />
+                                        ) : (
+                                          <p>{row['Example 2']}</p>
+                                        )}
                                       </div>
                                     )}
                                   </div>

@@ -197,41 +197,40 @@ export default function Home() {
 
       {/* Main Content Pane */}
       <main className={`main-content ${isSidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
+        <div className="main-content-inner">
+          {activeTab === 'dashboard' && (
+            <DashboardView
+              onViewChange={selectTab}
+              onPresetLoad={loadPresetBuilder}
+            />
+          )}
 
-        {activeTab === 'dashboard' && (
-          <DashboardView
-            onViewChange={selectTab}
-            onPresetLoad={loadPresetBuilder}
-          />
-        )}
+          {activeTab === 'playbooks' && (
+            <PlaybookView
+              initialPlatform={playbookPlatform}
+              highlightField={playbookHighlight}
+              clearHighlight={() => setPlaybookHighlight(null)}
+            />
+          )}
 
-        {activeTab === 'playbooks' && (
-          <PlaybookView
-            initialPlatform={playbookPlatform}
-            highlightField={playbookHighlight}
-            clearHighlight={() => setPlaybookHighlight(null)}
-          />
-        )}
+          {activeTab === 'builder' && (
+            <BuilderView
+              presetPlatform={builderPlatform}
+              presetSkuId={builderSkuId}
+              clearPresetSku={() => setBuilderSkuId('')}
+            />
+          )}
 
-        {activeTab === 'builder' && (
-          <BuilderView
-            presetPlatform={builderPlatform}
-            presetSkuId={builderSkuId}
-            clearPresetSku={() => setBuilderSkuId('')}
-          />
-        )}
+          {activeTab === 'matrix' && (
+            <MatrixView
+              onRedirect={redirectToPlaybook}
+            />
+          )}
 
-        {activeTab === 'matrix' && (
-          <MatrixView
-            onRedirect={redirectToPlaybook}
-          />
-        )}
-
-
-
-        <footer className="main-footer">
-          <p>Himalaya Wellness Catalog Playbook &copy; 2026 | Developed by <strong>Sriram - Summer Intern</strong></p>
-        </footer>
+          <footer className="main-footer">
+            <p>Himalaya Wellness Catalog Playbook &copy; 2026 | Developed by <strong>Sriram - Summer Intern</strong></p>
+          </footer>
+        </div>
       </main>
     </div>
   );

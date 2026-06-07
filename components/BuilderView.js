@@ -321,38 +321,32 @@ export default function BuilderView({ presetPlatform, presetSkuId, clearPresetSk
         </div>
       </div>
 
+      {/* ── New Config Toolbar at the top ── */}
+      <div className="bld-config-toolbar">
+        <div className="bld-config-item">
+          <label>Target Channel</label>
+          <select value={platform} onChange={e => setPlatform(e.target.value)}>
+            {platforms.map(p => <option key={p} value={p}>{p.replace(' (2)', '')}</option>)}
+          </select>
+        </div>
+        <div className="bld-config-item">
+          <label>Portfolio</label>
+          <select value={categoryFilter} onChange={e => handleCategoryFilterChange(e.target.value)}>
+            <option value="Beauty">Beauty Portfolio</option>
+            <option value="Baby">Baby Portfolio</option>
+          </select>
+        </div>
+      </div>
+
       <div className="bld-workspace">
         {/* ══════════════════════ LEFT COLUMN ══════════════════════ */}
         <div className="bld-left">
-
-          {/* ── Panel 1: Configuration ── */}
-          <div className="bld-card">
-            <div className="bld-card-header">
-              <Sliders style={{ width: 18, height: 18 }} />
-              <h2>1. Configuration</h2>
-            </div>
-            <div className="bld-form-grid2">
-              <div className="bld-form-group">
-                <label>Target Channel</label>
-                <select value={platform} onChange={e => setPlatform(e.target.value)}>
-                  {platforms.map(p => <option key={p} value={p}>{p.replace(' (2)', '')}</option>)}
-                </select>
-              </div>
-              <div className="bld-form-group">
-                <label>Category</label>
-                <select value={categoryFilter} onChange={e => handleCategoryFilterChange(e.target.value)}>
-                  <option value="Beauty">Beauty</option>
-                  <option value="Baby">Baby</option>
-                </select>
-              </div>
-            </div>
-          </div>
 
           {/* ── Panel 2: Title Builder ── */}
           <div className="bld-card">
             <div className="bld-card-header">
               <Heading style={{ width: 18, height: 18 }} />
-              <h2>2. Title Builder</h2>
+              <h2>Title Builder</h2>
             </div>
 
             {/* Spec bar */}
@@ -452,78 +446,8 @@ export default function BuilderView({ presetPlatform, presetSkuId, clearPresetSk
             </button>
           </div>
 
-          {/* ── Panel 3: PDP Content ── */}
-          <div className="bld-card">
-            <div className="bld-card-header">
-              <AlignLeft style={{ width: 18, height: 18 }} />
-              <h2>3. Product Page Content</h2>
-            </div>
 
-            {otherSpecs.length === 0 && (
-              <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>Select a platform above to load PDP field specs.</p>
-            )}
 
-            {otherSpecs.map((field, idx) => {
-              const fn = field['Field'] || field['Attribute'] || '';
-              const isDesc = fn.toLowerCase().includes('desc');
-              const isBullet = fn.toLowerCase().includes('feat') || fn.toLowerCase().includes('bullet') || fn.toLowerCase().includes('highlight');
-              const isIngred = fn.toLowerCase().includes('ingred');
-              const stateVal = isDesc ? description : isBullet ? bulletText : isIngred ? ingredientList : '';
-              const setFn = isDesc ? setDescription : isBullet ? setBulletText : isIngred ? setIngredientList : null;
-              if (!setFn) return null;
-
-              const copyKey = isDesc ? 'desc' : isBullet ? 'bullets' : 'ingred';
-              const limit = field['Hard Limit'] || 'None';
-              const target = field['Target Range'] || 'None';
-
-              return (
-                <div key={idx} className="bld-field-block">
-                  <div className="bld-field-block-header">
-                    <div>
-                      <div className="bld-label">{fn}</div>
-                      <div className="bld-field-specs">
-                        <span className="bld-spec-chip red">Limit: {limit}</span>
-                        <span className="bld-spec-chip green">Target: {target}</span>
-                        <span className={counterClass(stateVal.length, limit, target)} style={{ marginLeft: 'auto' }}>
-                          {stateVal.length} chars
-                        </span>
-                      </div>
-                    </div>
-                    <button className="bld-copy-sm" onClick={() => handleCopy(copyKey, stateVal)}>
-                      {copiedKey === copyKey ? <CheckCircle style={{ width: 12, height: 12 }} /> : <Copy style={{ width: 12, height: 12 }} />}
-                    </button>
-                  </div>
-                  {/* Visual bar */}
-                  <div className="bld-char-bar" style={{ marginBottom: 8 }}>
-                    <div
-                      className={`bld-char-fill ${
-                        parseHardLimit(limit) && stateVal.length > parseHardLimit(limit) ? 'over' :
-                        parseTargetRange(target) && stateVal.length >= parseTargetRange(target).min && stateVal.length <= parseTargetRange(target).max ? 'good' : 'warn'
-                      }`}
-                      style={{ width: `${Math.min((stateVal.length / (parseHardLimit(limit) || 500)) * 100, 100)}%` }}
-                    />
-                  </div>
-                  <textarea
-                    className="bld-textarea"
-                    value={stateVal}
-                    onChange={e => setFn(e.target.value)}
-                    placeholder={
-                      isBullet
-                        ? 'One bullet per line.\ne.g. Purifying Neem extract removes excess oil\nSulphate-free, Paraben-free formula'
-                        : `Enter ${fn.toLowerCase()}…`
-                    }
-                    rows={isBullet ? 6 : 4}
-                  />
-                  {field['Notes'] && (
-                    <div className="bld-note-tip">
-                      <Info style={{ width: 12, height: 12 }} />
-                      <span>{field['Notes']}</span>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
         </div>
 
         {/* ══════════════════════ RIGHT COLUMN — STICKY PREVIEW ══════════════════════ */}

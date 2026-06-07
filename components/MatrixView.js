@@ -471,17 +471,20 @@ export default function MatrixView({ onRedirect }) {
                 { label: 'P1', bg: '#ffeb9c', color: '#9c6500', desc: 'One of the two: either ranking-relevant OR user-visible / conversion-driving. Optimise after P0 is solid.' },
                 { label: 'P2', bg: '#ffc7ce', color: '#9c0006', desc: 'Neither ranking-relevant nor pre-click visible, but supports on-page conversion. Optimise once P0 and P1 are clean.' },
                 { label: 'NA', bg: '#f2f2f2', color: '#888',    desc: 'Field not available, or not brand-controlled, on this platform.' },
-              ].map(p => (
-                <span
-                  key={p.label}
-                  className="plegend-pill-badge"
-                  style={{ background: p.bg, color: p.color, cursor: 'pointer' }}
-                  onMouseEnter={(e) => handleChipHover(p, e)}
-                  onMouseLeave={handleChipLeave}
-                >
-                  {p.label}
-                </span>
-              ))}
+              ].map(p => {
+                const hasHover = p.label !== 'NA';
+                return (
+                  <span
+                    key={p.label}
+                    className="plegend-pill-badge"
+                    style={{ background: p.bg, color: p.color, cursor: hasHover ? 'pointer' : 'default' }}
+                    onMouseEnter={hasHover ? (e) => handleChipHover(p, e) : undefined}
+                    onMouseLeave={hasHover ? handleChipLeave : undefined}
+                  >
+                    {p.label}
+                  </span>
+                );
+              })}
             </div>
           </div>
 
@@ -523,23 +526,18 @@ export default function MatrixView({ onRedirect }) {
                           <td
                             key={ch.key}
                             className="mxt-td mxt-p-td"
-                            style={style ? { background: style.bg } : {}}
+                            style={style ? { 
+                              background: style.bg, 
+                              color: style.color, 
+                              fontWeight: 700,
+                              textAlign: 'center',
+                              verticalAlign: 'middle',
+                              fontSize: '12.5px',
+                              padding: '12px 14px'
+                            } : {}}
                             data-label={ch.label}
                           >
-                            {style ? (
-                              <span
-                                className="mxt-p-chip"
-                                style={{ color: style.color, fontWeight: 700 }}
-                                onClick={() => onRedirect(ch.label, row.attribute)}
-                                onMouseEnter={(e) => handleChipHover(style, e)}
-                                onMouseLeave={handleChipLeave}
-                                aria-label={`${style.label}: ${style.desc}`}
-                              >
-                                {style.label}
-                              </span>
-                            ) : (
-                              <span className="mxt-empty-cell">—</span>
-                            )}
+                            {style ? style.label : '—'}
                           </td>
                         );
                       })}

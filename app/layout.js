@@ -1,7 +1,7 @@
-import { Outfit, Inter } from 'next/font/google';
+import { Plus_Jakarta_Sans, Inter } from 'next/font/google';
 import './globals.css';
 
-const outfit = Outfit({ 
+const jakarta = Plus_Jakarta_Sans({ 
   subsets: ['latin'],
   weight: ['300', '400', '500', '600', '700', '800'],
   variable: '--font-heading',
@@ -22,7 +22,7 @@ export const metadata = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en" className={`${outfit.variable} ${inter.variable}`}>
+    <html lang="en" className={`${jakarta.variable} ${inter.variable}`}>
       <head>
         <link 
           rel="stylesheet" 
