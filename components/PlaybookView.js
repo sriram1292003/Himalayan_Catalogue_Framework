@@ -199,28 +199,28 @@ export default function PlaybookView({ initialPlatform, highlightField, clearHig
         })}
       </div>
 
+      {/* ── Platform Info Card ── */}
+      <div className="pb-header-card" style={{ '--platform-color': meta.color, '--platform-bg': meta.bg, '--platform-accent': meta.accent }}>
+        <div className="pb-card-header-glow" />
+        <div className="pb-card-header-content">
+          <div className="pb-card-title-row">
+            <div className="pb-platform-badge" style={{ background: meta.bg, color: meta.color, borderColor: meta.color + '33' }}>
+              <span style={{ fontSize: 20 }}>{meta.icon}</span>
+              <span>{platform.replace(' (2)', '')} Playbook</span>
+            </div>
+            <div className="pb-row-count-badge">
+              <span style={{ color: meta.color, fontWeight: 700 }}>{dataRowCount}</span>
+              <span>rules</span>
+            </div>
+          </div>
+          {playbook.desc && <h2 className="pb-card-desc">{playbook.desc}</h2>}
+          {playbook.subtitle && <p className="pb-card-subdesc">{playbook.subtitle}</p>}
+        </div>
+      </div>
+
       {/* ── Main Table Card ── */}
       <div className="pb-table-card" style={{ '--platform-color': meta.color, '--platform-bg': meta.bg, '--platform-accent': meta.accent }}>
-
-        {/* Card Header with gradient accent */}
-        <div className="pb-card-header">
-          <div className="pb-card-header-glow" />
-          <div className="pb-card-header-content">
-            <div className="pb-card-title-row">
-              <div className="pb-platform-badge" style={{ background: meta.bg, color: meta.color, borderColor: meta.color + '33' }}>
-                <span style={{ fontSize: 20 }}>{meta.icon}</span>
-                <span>{platform.replace(' (2)', '')} Playbook</span>
-              </div>
-              <div className="pb-row-count-badge">
-                <span style={{ color: meta.color, fontWeight: 700 }}>{dataRowCount}</span>
-                <span>rules</span>
-              </div>
-            </div>
-            {playbook.desc && <p className="pb-card-desc">{playbook.desc}</p>}
-            {playbook.subtitle && <p className="pb-card-subdesc">{playbook.subtitle}</p>}
-          </div>
-        </div>
-
+        
         {/* Filters Bar */}
         <div className="pb-filters-bar">
           <div className="pb-filters-left">
